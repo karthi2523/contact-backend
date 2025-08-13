@@ -10,7 +10,6 @@ import path from "path";
 dotenv.config();
 const app = express();
 
-
 const PORT = process.env.PORT || 8080;
 const ALLOW_ORIGIN = (process.env.ALLOW_ORIGIN || "")
   .split(",")
@@ -20,27 +19,34 @@ const ALLOW_ORIGIN = (process.env.ALLOW_ORIGIN || "")
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(express.json({ limit: "100kb" }));
 
-
 app.use(express.static("public"));
 
-
+// ✅ Updated CORS to allow subdomains and patterns
 app.use(
   cors({
     origin(origin, cb) {
-      if (!origin) return cb(null, true); // allow curl/postman
-      if (ALLOW_ORIGIN.includes(origin)) return cb(null, true);
+      if (!origin) return cb(null, true); // Allow Postman/cURL without origin
+
+      const allowed = ALLOW_ORIGIN.some(pattern => {
+        if (origin === pattern) return true;
+        // Allow if pattern is domain and origin ends with it (e.g., any subdomain)
+        if (pattern.startsWith("https://") && origin.endsWith(pattern.replace("https://", ""))) {
+          return true;
+        }
+        return false;
+      });
+
+      if (allowed) return cb(null, true);
       cb(new Error("Not allowed by CORS"));
     }
   })
 );
 
-
 const limiter = rateLimit({
-  windowMs: 60 * 1000, 
-  max: 20,             
+  windowMs: 60 * 1000,
+  max: 20
 });
 app.use("/api/", limiter);
-
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -52,10 +58,9 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-
 transporter.verify().then(
   () => console.log("✓ SMTP connection ready"),
-  (err) => console.error("✗ SMTP error:", err.message)
+  err => console.error("✗ SMTP error:", err.message)
 );
 
 app.get("/health", (_, res) => res.json({ ok: true }));
@@ -64,7 +69,7 @@ app.post("/contact", async (req, res) => {
   try {
     const { name, email, subject, message, website } = req.body || {};
 
-    if (website) return res.status(200).json({ ok: true }); 
+    if (website) return res.status(200).json({ ok: true });
 
     if (!name || !email || !subject || !message) {
       return res.status(400).json({ ok: false, error: "All fields are required." });
@@ -115,13 +120,11 @@ ${message}
   }
 });
 
-
 app.post("/download-resume", async (req, res) => {
   try {
     const from = process.env.FROM_EMAIL || process.env.SMTP_USER;
     const to = process.env.TO_EMAIL || process.env.SMTP_USER;
 
-    
     await transporter.sendMail({
       from,
       to,
@@ -130,7 +133,6 @@ app.post("/download-resume", async (req, res) => {
       html: `<p>Someone just downloaded your resume at <b>${new Date().toLocaleString()}</b>.</p>`
     });
 
-    
     res.json({
       fileUrl: `${req.protocol}://${req.get("host")}/Karthi_B.pdf`
     });
@@ -139,6 +141,5 @@ app.post("/download-resume", async (req, res) => {
     res.status(500).json({ ok: false, error: "Failed to send resume notification." });
   }
 });
-
 
 app.listen(PORT, () => console.log(`Server running on :${PORT}`));
