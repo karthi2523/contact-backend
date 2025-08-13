@@ -11,6 +11,8 @@ dotenv.config();
 const app = express();
 
 const PORT = process.env.PORT || 8080;
+
+// ✅ Parse allowed origins from .env
 const ALLOW_ORIGIN = (process.env.ALLOW_ORIGIN || "")
   .split(",")
   .map(s => s.trim())
@@ -18,36 +20,28 @@ const ALLOW_ORIGIN = (process.env.ALLOW_ORIGIN || "")
 
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(express.json({ limit: "100kb" }));
-
 app.use(express.static("public"));
 
-// ✅ Updated CORS to allow subdomains and patterns
+// ✅ CORS middleware with env-based whitelist
 app.use(
   cors({
     origin(origin, cb) {
-      if (!origin) return cb(null, true); // Allow Postman/cURL without origin
-
-      const allowed = ALLOW_ORIGIN.some(pattern => {
-        if (origin === pattern) return true;
-        // Allow if pattern is domain and origin ends with it (e.g., any subdomain)
-        if (pattern.startsWith("https://") && origin.endsWith(pattern.replace("https://", ""))) {
-          return true;
-        }
-        return false;
-      });
-
-      if (allowed) return cb(null, true);
+      if (!origin) return cb(null, true); // Allow server-to-server / Postman
+      if (ALLOW_ORIGIN.includes(origin)) return cb(null, true);
       cb(new Error("Not allowed by CORS"));
     }
   })
 );
 
+// ✅ Rate limiting to prevent spam
 const limiter = rateLimit({
   windowMs: 60 * 1000,
   max: 20
 });
 app.use("/api/", limiter);
+app.use("/contact", limiter);
 
+// ✅ Email transport setup
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT || 465),
@@ -63,12 +57,15 @@ transporter.verify().then(
   err => console.error("✗ SMTP error:", err.message)
 );
 
+// ✅ Health check
 app.get("/health", (_, res) => res.json({ ok: true }));
 
-app.post("/contact", async (req, res) => {
+// ✅ Contact form handler
+const contactHandler = async (req, res) => {
   try {
     const { name, email, subject, message, website } = req.body || {};
 
+    // Spam honeypot
     if (website) return res.status(200).json({ ok: true });
 
     if (!name || !email || !subject || !message) {
@@ -91,7 +88,7 @@ Subject: ${subject}
 
 Message:
 ${message}
-`.trim();
+    `.trim();
 
     const html = `
       <div style="font-family:Arial,Helvetica,sans-serif;line-height:1.6">
@@ -118,8 +115,13 @@ ${message}
     console.error("Email send error:", err);
     res.status(500).json({ ok: false, error: "Failed to send message." });
   }
-});
+};
 
+// ✅ Support both `/contact` and `/api/contact`
+app.post("/contact", contactHandler);
+app.post("/api/contact", contactHandler);
+
+// ✅ Resume download notification
 app.post("/download-resume", async (req, res) => {
   try {
     const from = process.env.FROM_EMAIL || process.env.SMTP_USER;
