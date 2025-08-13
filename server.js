@@ -60,7 +60,7 @@ transporter.verify().then(
 
 app.get("/health", (_, res) => res.json({ ok: true }));
 
-app.post("/api/contact", async (req, res) => {
+app.post("/contact", async (req, res) => {
   try {
     const { name, email, subject, message, website } = req.body || {};
 
@@ -116,7 +116,7 @@ ${message}
 });
 
 
-app.post("/api/download-resume", async (req, res) => {
+app.post("/download-resume", async (req, res) => {
   try {
     const from = process.env.FROM_EMAIL || process.env.SMTP_USER;
     const to = process.env.TO_EMAIL || process.env.SMTP_USER;
