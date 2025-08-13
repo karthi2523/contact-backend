@@ -5,19 +5,25 @@ import rateLimit from "express-rate-limit";
 import nodemailer from "nodemailer";
 import dotenv from "dotenv";
 import validator from "validator";
+import path from "path";
 
 dotenv.config();
 const app = express();
 
-// --- Config ---
-const PORT = process.env.PORT || 8080;
-const ALLOW_ORIGIN = (process.env.ALLOW_ORIGIN || "").split(",").map(s => s.trim()).filter(Boolean);
 
-// --- Middleware ---
+const PORT = process.env.PORT || 8080;
+const ALLOW_ORIGIN = (process.env.ALLOW_ORIGIN || "")
+  .split(",")
+  .map(s => s.trim())
+  .filter(Boolean);
+
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(express.json({ limit: "100kb" }));
 
-// CORS: allow specific origins (dev + prod)
+
+app.use(express.static("public"));
+
+
 app.use(
   cors({
     origin(origin, cb) {
@@ -28,48 +34,44 @@ app.use(
   })
 );
 
-// Basic rate limiting
+
 const limiter = rateLimit({
-  windowMs: 60 * 1000, // 1 min
-  max: 20,             // 20 requests/min/IP
+  windowMs: 60 * 1000, 
+  max: 20,             
 });
 app.use("/api/", limiter);
 
-// --- Mail transporter ---
+
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,               // e.g., smtp.gmail.com
+  host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT || 465),
-  secure: Number(process.env.SMTP_PORT || 465) === 465, // true for 465
+  secure: Number(process.env.SMTP_PORT || 465) === 465,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS
   }
 });
 
-// Optional verify on boot (helpful while deploying)
+
 transporter.verify().then(
   () => console.log("✓ SMTP connection ready"),
   (err) => console.error("✗ SMTP error:", err.message)
 );
 
-// --- Routes ---
 app.get("/health", (_, res) => res.json({ ok: true }));
 
 app.post("/api/contact", async (req, res) => {
   try {
     const { name, email, subject, message, website } = req.body || {};
 
-    // Honeypot (spam bots often fill hidden fields). If filled, pretend success.
-    if (website) return res.status(200).json({ ok: true });
+    if (website) return res.status(200).json({ ok: true }); 
 
-    // Validate
     if (!name || !email || !subject || !message) {
       return res.status(400).json({ ok: false, error: "All fields are required." });
     }
     if (!validator.isEmail(email)) {
       return res.status(400).json({ ok: false, error: "Invalid email." });
     }
-    // length limits
     if (name.length > 100 || subject.length > 200 || message.length > 5000) {
       return res.status(400).json({ ok: false, error: "Input too long." });
     }
@@ -78,8 +80,6 @@ app.post("/api/contact", async (req, res) => {
     const to = process.env.TO_EMAIL || process.env.SMTP_USER;
 
     const text = `
-Help me:
-
 Name: ${name}
 Email: ${email}
 Subject: ${subject}
@@ -102,7 +102,7 @@ ${message}
     await transporter.sendMail({
       from,
       to,
-      replyTo: email, // so you can reply directly
+      replyTo: email,
       subject: `Portfolio Contact: ${subject}`,
       text,
       html
@@ -115,5 +115,30 @@ ${message}
   }
 });
 
-// --- Start ---
+
+app.post("/api/download-resume", async (req, res) => {
+  try {
+    const from = process.env.FROM_EMAIL || process.env.SMTP_USER;
+    const to = process.env.TO_EMAIL || process.env.SMTP_USER;
+
+    
+    await transporter.sendMail({
+      from,
+      to,
+      subject: "Resume Downloaded",
+      text: `Someone just downloaded your resume at ${new Date().toLocaleString()}.`,
+      html: `<p>Someone just downloaded your resume at <b>${new Date().toLocaleString()}</b>.</p>`
+    });
+
+    
+    res.json({
+      fileUrl: `${req.protocol}://${req.get("host")}/Karthi_B.pdf`
+    });
+  } catch (err) {
+    console.error("Resume notification error:", err);
+    res.status(500).json({ ok: false, error: "Failed to send resume notification." });
+  }
+});
+
+
 app.listen(PORT, () => console.log(`Server running on :${PORT}`));
