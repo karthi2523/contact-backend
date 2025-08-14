@@ -12,49 +12,53 @@ dotenv.config();
 const app = express();
 
 const PORT = process.env.PORT || 8080;
-
-// ✅ Single allowed origin from .env
 const ALLOW_ORIGIN = (process.env.ALLOW_ORIGIN || "").trim();
 
+// ✅ CORS setup (before Helmet, before routes)
+const corsOptions = {
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true); // Allow server-to-server/Postman
+    if (origin === ALLOW_ORIGIN) return cb(null, true);
+    return cb(new Error("Not allowed by CORS"));
+  },
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type"],
+  credentials: false
+};
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // Handle preflight globally
+
+// ✅ Security
 app.use(helmet({ crossOriginResourcePolicy: false }));
+
+// ✅ Body parser
 app.use(express.json({ limit: "100kb" }));
+
+// ✅ Static files (PDF in public/)
 app.use(express.static("public"));
 
-// ✅ Strict CORS with single allowed origin
-app.use(
-  cors({
-    origin(origin, cb) {
-      if (!origin) return cb(null, true); // Allow server-to-server/Postman
-      if (origin === ALLOW_ORIGIN) return cb(null, true);
-      cb(new Error("Not allowed by CORS"));
-    },
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type"],
-  })
-);
-
-// ✅ Rate limiting to prevent spam
+// ✅ Rate limiting
 const limiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 20,
+  max: 20
 });
 app.use("/api/", limiter);
 app.use("/contact", limiter);
 
-// ✅ Email transport setup
+// ✅ Nodemailer setup
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT || 465),
   secure: Number(process.env.SMTP_PORT || 465) === 465,
   auth: {
     user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
+    pass: process.env.SMTP_PASS
+  }
 });
 
 transporter.verify().then(
   () => console.log("✓ SMTP connection ready"),
-  (err) => console.error("✗ SMTP error:", err.message)
+  err => console.error("✗ SMTP error:", err.message)
 );
 
 // ✅ Health check
@@ -65,7 +69,7 @@ const contactHandler = async (req, res) => {
   try {
     const { name, email, subject, message, website } = req.body || {};
 
-    // Spam honeypot
+    // Honeypot
     if (website) return res.status(200).json({ ok: true });
 
     if (!name || !email || !subject || !message) {
@@ -100,7 +104,7 @@ ${message}
 
     const html = `
       <div style="font-family:Arial,Helvetica,sans-serif;line-height:1.6">
-        <h2>New Portfolio Contact</h2>
+        <h2>Hii there!!!</h2>
         <p><strong>Name:</strong> ${validator.escape(name)}</p>
         <p><strong>Email:</strong> ${validator.escape(email)}</p>
         <p><strong>Subject:</strong> ${validator.escape(subject)}</p>
@@ -117,7 +121,7 @@ ${message}
       replyTo: email,
       subject: `Portfolio Contact: ${subject}`,
       text,
-      html,
+      html
     });
 
     res.json({ ok: true });
@@ -127,11 +131,11 @@ ${message}
   }
 };
 
-// ✅ Support both `/contact` and `/api/contact`
+// ✅ Contact routes
 app.post("/contact", contactHandler);
 app.post("/api/contact", contactHandler);
 
-// ✅ Resume download notification
+// ✅ Resume download with email notification
 app.post("/download-resume", async (req, res) => {
   try {
     const from = process.env.FROM_EMAIL || process.env.SMTP_USER;
@@ -142,15 +146,18 @@ app.post("/download-resume", async (req, res) => {
       to,
       subject: "Resume Downloaded",
       text: `Someone just downloaded your resume at ${new Date().toLocaleString()}.`,
-      html: `<p>Someone just downloaded your resume at <b>${new Date().toLocaleString()}</b>.</p>`,
+      html: `<p>Someone just downloaded your resume at <b>${new Date().toLocaleString()}</b>.</p>`
     });
 
-    res.json({
-      fileUrl: `${req.protocol}://${req.get("host")}/Karthi_B.pdf`,
-    });
+    // Generate absolute URL to PDF in /public
+    const fileUrl = `${req.protocol}://${req.get("host")}/Karthi_B.pdf`;
+
+    res.json({ fileUrl });
   } catch (err) {
     console.error("Resume notification error:", err);
-    res.status(500).json({ ok: false, error: "Failed to send resume notification." });
+    res
+      .status(500)
+      .json({ ok: false, error: "Failed to send resume notification." });
   }
 });
 
