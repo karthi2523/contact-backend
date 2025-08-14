@@ -14,19 +14,20 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 const ALLOW_ORIGIN = (process.env.ALLOW_ORIGIN || "").trim();
 
-// ✅ CORS setup (before Helmet, before routes)
+// ✅ CORS setup (before Helmet & routes)
 const corsOptions = {
   origin: (origin, cb) => {
-    if (!origin) return cb(null, true); // Allow server-to-server/Postman
-    if (origin === ALLOW_ORIGIN) return cb(null, true);
+    // Allow non-browser tools (no origin) and exact match to env
+    if (!origin || origin === ALLOW_ORIGIN) return cb(null, true);
     return cb(new Error("Not allowed by CORS"));
   },
   methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type"],
+  allowedHeaders: ["Content-Type", "Authorization"],
   credentials: false
 };
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions)); // Handle preflight globally
+// Always handle preflight globally
+app.options("*", cors(corsOptions));
 
 // ✅ Security
 app.use(helmet({ crossOriginResourcePolicy: false }));
@@ -34,7 +35,7 @@ app.use(helmet({ crossOriginResourcePolicy: false }));
 // ✅ Body parser
 app.use(express.json({ limit: "100kb" }));
 
-// ✅ Static files (PDF in public/)
+// ✅ Serve static files from /public
 app.use(express.static("public"));
 
 // ✅ Rate limiting
@@ -44,6 +45,7 @@ const limiter = rateLimit({
 });
 app.use("/api/", limiter);
 app.use("/contact", limiter);
+app.use("/download-resume", limiter);
 
 // ✅ Nodemailer setup
 const transporter = nodemailer.createTransport({
@@ -64,30 +66,24 @@ transporter.verify().then(
 // ✅ Health check
 app.get("/health", (_, res) => res.json({ ok: true }));
 
-// ✅ Contact form handler
+// =====================
+// Contact form handler
+// =====================
 const contactHandler = async (req, res) => {
   try {
     const { name, email, subject, message, website } = req.body || {};
 
-    // Honeypot
+    // Honeypot for spam bots
     if (website) return res.status(200).json({ ok: true });
 
     if (!name || !email || !subject || !message) {
-      return res
-        .status(400)
-        .json({ ok: false, error: "All fields are required." });
+      return res.status(400).json({ ok: false, error: "All fields are required." });
     }
     if (!validator.isEmail(email)) {
       return res.status(400).json({ ok: false, error: "Invalid email." });
     }
-    if (
-      name.length > 100 ||
-      subject.length > 200 ||
-      message.length > 5000
-    ) {
-      return res
-        .status(400)
-        .json({ ok: false, error: "Input too long." });
+    if (name.length > 100 || subject.length > 200 || message.length > 5000) {
+      return res.status(400).json({ ok: false, error: "Input too long." });
     }
 
     const from = process.env.FROM_EMAIL || process.env.SMTP_USER;
@@ -104,14 +100,12 @@ ${message}
 
     const html = `
       <div style="font-family:Arial,Helvetica,sans-serif;line-height:1.6">
-        <h2>Hii there!!!</h2>
+        <h2>Portfolio Contact</h2>
         <p><strong>Name:</strong> ${validator.escape(name)}</p>
         <p><strong>Email:</strong> ${validator.escape(email)}</p>
         <p><strong>Subject:</strong> ${validator.escape(subject)}</p>
         <p><strong>Message:</strong></p>
-        <pre style="white-space:pre-wrap;background:#f7f7f9;padding:12px;border-radius:6px;border:1px solid #eee">${validator.escape(
-          message
-        )}</pre>
+        <pre style="white-space:pre-wrap;background:#f7f7f9;padding:12px;border-radius:6px;border:1px solid #eee">${validator.escape(message)}</pre>
       </div>
     `;
 
@@ -135,7 +129,9 @@ ${message}
 app.post("/contact", contactHandler);
 app.post("/api/contact", contactHandler);
 
-// ✅ Resume download with email notification
+// =====================
+// Resume download route
+// =====================
 app.post("/download-resume", async (req, res) => {
   try {
     const from = process.env.FROM_EMAIL || process.env.SMTP_USER;
@@ -149,16 +145,14 @@ app.post("/download-resume", async (req, res) => {
       html: `<p>Someone just downloaded your resume at <b>${new Date().toLocaleString()}</b>.</p>`
     });
 
-    // Generate absolute URL to PDF in /public
+    // Absolute URL to resume PDF in /public
     const fileUrl = `${req.protocol}://${req.get("host")}/Karthi_B.pdf`;
 
     res.json({ fileUrl });
   } catch (err) {
     console.error("Resume notification error:", err);
-    res
-      .status(500)
-      .json({ ok: false, error: "Failed to send resume notification." });
+    res.status(500).json({ ok: false, error: "Failed to send resume notification." });
   }
 });
 
-app.listen(PORT, () => console.log(`Server running on :${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
