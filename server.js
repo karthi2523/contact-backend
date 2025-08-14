@@ -26,19 +26,18 @@ const corsOptions = {
   credentials: false
 };
 app.use(cors(corsOptions));
-// Always handle preflight globally
+
 app.options("*", cors(corsOptions));
 
-// ✅ Security
+
 app.use(helmet({ crossOriginResourcePolicy: false }));
 
-// ✅ Body parser
+
 app.use(express.json({ limit: "100kb" }));
 
-// ✅ Serve static files from /public
 app.use(express.static("public"));
 
-// ✅ Rate limiting
+
 const limiter = rateLimit({
   windowMs: 60 * 1000,
   max: 20
@@ -47,7 +46,7 @@ app.use("/api/", limiter);
 app.use("/contact", limiter);
 app.use("/download-resume", limiter);
 
-// ✅ Nodemailer setup
+
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT || 465),
@@ -63,12 +62,10 @@ transporter.verify().then(
   err => console.error("✗ SMTP error:", err.message)
 );
 
-// ✅ Health check
+
 app.get("/health", (_, res) => res.json({ ok: true }));
 
-// =====================
-// Contact form handler
-// =====================
+
 const contactHandler = async (req, res) => {
   try {
     const { name, email, subject, message, website } = req.body || {};
@@ -100,7 +97,7 @@ ${message}
 
     const html = `
       <div style="font-family:Arial,Helvetica,sans-serif;line-height:1.6">
-        <h2>Portfolio Contact</h2>
+        <h2>Hii there!!!!</h2>
         <p><strong>Name:</strong> ${validator.escape(name)}</p>
         <p><strong>Email:</strong> ${validator.escape(email)}</p>
         <p><strong>Subject:</strong> ${validator.escape(subject)}</p>
@@ -125,13 +122,11 @@ ${message}
   }
 };
 
-// ✅ Contact routes
+
 app.post("/contact", contactHandler);
 app.post("/api/contact", contactHandler);
 
-// =====================
-// Resume download route
-// =====================
+
 app.post("/download-resume", async (req, res) => {
   try {
     const from = process.env.FROM_EMAIL || process.env.SMTP_USER;
@@ -145,7 +140,7 @@ app.post("/download-resume", async (req, res) => {
       html: `<p>Someone just downloaded your resume at <b>${new Date().toLocaleString()}</b>.</p>`
     });
 
-    // Absolute URL to resume PDF in /public
+
     const fileUrl = `${req.protocol}://${req.get("host")}/Karthi_B.pdf`;
 
     res.json({ fileUrl });
